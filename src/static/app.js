@@ -12,22 +12,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      // Reset activity select to avoid duplicate options when re-fetching
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
-        const activityCard = document.createElement("div");
-        activityCard.className = "activity-card";
+          const activityCard = document.createElement("div");
+          activityCard.className = "activity-card";
 
-        const spotsLeft = details.max_participants - details.participants.length;
+          const spotsLeft = details.max_participants - details.participants.length;
 
-        activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
-        `;
+          const participantsListHTML = details.participants.length > 0
+            ? details.participants.map(p => `<li class="participant-row"><span class="participant-email">${p}</span><button class="remove-btn" data-activity="${encodeURIComponent(name)}" data-email="${encodeURIComponent(p)}" aria-label="Remove participant">✖</button></li>`).join('')
+            : '<li class="no-participants">No participants yet</li>';
 
-        activitiesList.appendChild(activityCard);
+          activityCard.innerHTML = `
+            <h4>${name}</h4>
+            <p>${details.description}</p>
+            <p><strong>Schedule:</strong> ${details.schedule}</p>
+            <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+            <div class="participants">
+              <strong>Participants:</strong>
+              <ul class="participants-list">
+                ${participantsListHTML}
+              </ul>
+            </div>
+          `;
+
+          activitiesList.appendChild(activityCard);
 
         // Add option to select dropdown
         const option = document.createElement("option");
@@ -62,6 +74,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities so the newly-registered participant appears immediately
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
@@ -83,4 +97,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialize app
   fetchActivities();
+
+  // Handle remove participant clicks (event delegation)
+  document.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (target.classList && target.classList.contains("remove-btn")) {
+      const activity = decodeURIComponent(target.dataset.activity || "");
+      const email = decodeURIComponent(target.dataset.email || "");
+
+      if (!activity || !email) return;
+
+      try {
+        const resp = await fetch(`/activities/${encodeURIComponent(activity)}/unregister?email=${encodeURIComponent(email)}`, {
+          method: "POST",
+        });
+
+        const resJson = await resp.json();
+
+        if (resp.ok) {
+          messageDiv.textContent = resJson.message;
+          messageDiv.className = "success";
+          // Refresh list
+          // Clear and repopulate the activity select so duplicates don't accumulate
+          activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
+          fetchActivities();
+        } else {
+          messageDiv.textContent = resJson.detail || "An error occurred";
+          messageDiv.className = "error";
+        }
+
+        messageDiv.classList.remove("hidden");
+        setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+      } catch (err) {
+        console.error("Error removing participant:", err);
+        messageDiv.textContent = "Failed to remove participant. Please try again.";
+        messageDiv.className = "error";
+        messageDiv.classList.remove("hidden");
+        setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+      }
+    }
+  });
 });
